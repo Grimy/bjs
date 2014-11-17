@@ -1,14 +1,26 @@
+CC = gcc --std=c99
+
+.PHONY: run
 run: bjs
-	./bjs
+	./$<
 
 bjs: bjs.c
-	gcc -Wall bjs.c -o bjs
+	$(CC) -Wall $< -o $@
 
+.PHONY: prof
 prof: gmon.out
 	gprof --brief
 
 gmon.out: a.out
-	./a.out
+	./$<
 
 a.out: bjs.c
-	gcc -pg -Wall bjs.c
+	$(CC) -pg -Wall $<
+
+.PHONY: debug
+debug: bjs-debug
+	gdb bjs-debug
+
+bjs-debug: bjs.c
+	$(CC) -g -Wall $< -o $@
+

@@ -1,72 +1,104 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
-#define DECK_SIZE 312
-#define value(x) ((x) & 31)
-#define softness(x) ((x) & ~31)
+#define mv(a, b, i) --(a)[i]; ++(b)[i]
+#define max(a, b) ((a) > (b) ? (a) : (b))
 
 // < 0% : 5vA 6vA 14v10 12v4
 // < .5% : 16v9 11v10 A7v2 7vA A2v5
-// < 2% : 13v2 12v3 12v4 12v6 12vA 9v2 8v6 7v2 A5v3 A3v4
-static int esp[3];
-static bool picked[DECK_SIZE];
-static bool should_hit[12][96] = {{0}};
-static int hand, bank;
-static int hand_fst, hand_snd, bank_fst;
+// < 2% : 13v2 12v3 12v6 12vA 9v2 8v6 A6v2 A5v3 A3v4
 
-static void add_card(int *hand, int card) {
-	picked[card] = true;
-	card = card >= 216 ? 10 : 1 + card / 24;
-	*hand += card + 42 * (card == 1);
-	if (value(*hand) > 21)
-		*hand = softness(*hand) ? *hand - 42 : 0;
-}
+static int deck[11] = { [1 ... 9] = 24, [10] = 96 };
+static int hand[11] = {0};
+static int bank[11] = {0};
 
-static void hit(int *hand) {
-	static int card;
-	while (picked[card = (int) (drand48() * DECK_SIZE)]);
-	add_card(hand, card);
-}
+static int hand_hash, hand_sum, hand_value, cards_left;
+/* static double cache[33023][5] = {[0 ... 33022] = {[0 ... 4] = .0d / .0d}}; */
 
-static void end_round(int multiplier) {
-	while (bank && value(bank) < 17)
-		hit(&bank);
-	esp[multiplier] += (multiplier == 2 ? 2 : 1) * (value(hand) > value(bank));
-	esp[multiplier] -= (multiplier == 2 ? 2 : 1) * (value(hand) < value(bank) || !hand);
-	memset(picked, 0, sizeof(picked));
-	hand = bank = 0;
-	add_card(&hand, hand_fst * 24 - 1);
-	add_card(&hand, hand_snd * 24 - 2);
-	add_card(&bank, bank_fst * 24 - 3);
-}
+void update_hand() {
+	int pos = 1 + hand[1] / 2;
+	int card = 2;
+	hand_hash = (hand[1] & 1) ^ ~(~0 << pos);
+	hand_sum = hand[1];
 
-static void play() {
-	int i;
-	end_round(0);
-	memset(esp, 0, sizeof(esp));
-	for (i = 0; i < 1E7; ++i) {
-		end_round(0);
-		hit(&hand);
-		while (should_hit[value(bank)][hand])
-			hit(&hand);
-		end_round(1);
-		hit(&hand);
-		end_round(2);
+	for (int i = 2; i < 11; i++) {
+		hand_sum += i * hand[i];
+		for (int j = 1; j < hand[i]; j++) {
+			hand_hash |= 1 << (pos += i + 1 - card);
+			card = i;
+		}
 	}
-	should_hit[value(bank)][hand] = esp[1] > esp[0];
-	printf("%2d%3d%6d\tS: %-11dH: %-11dD: %d\n", hand_fst, hand_snd, bank_fst,
-		esp[0], esp[1], esp[2]);
+	hand_value = hand_sum + 10 * (hand[1] && hand_sum <= 11);
+}
+
+double eval_bank() {
+	int sum = 0;
+	for (int i = 1; i < 11; ++i)
+		sum += i * bank[i];
+	int val = sum + 10 * (bank[1] && sum <= 11);
+	int blackjack = bank[1] && bank[10] && sum == 11;
+
+	if (val > 21)
+		return 1;
+	if (val >= 17)
+		return (hand_value > val) - (hand_value < val + blackjack);
+
+	double result, omg = 42E10;
+	cards_left--;
+	for (int i = 1; i < 11; ++i) {
+		mv(deck, bank, i);
+		printf("", omg);
+		result += (deck[i] + 1) * eval_bank();
+		mv(bank, deck, i);
+	}
+	cards_left++;
+
+	return result / cards_left;
+}
+
+double eval_hand(int moves) {
+	update_hand();
+	if (hand_value > 21)
+		return -1;
+	if (hand_value == 21 && hand_sum == 11) // Blackjack!
+		return 1.5 * (cards_left - hand[bank[11] ? 10 : bank[10]]) / cards_left;
+
+	/* double *exp = cache[hand_hash]; */
+	double exp[5] = {[0 ... 4] = .0d / .0d};
+	if (hand_hash > 33022) {
+		printf("Hash too big: %d\n", hand_hash);
+		exit(1);
+	}
+	if (exp[moves] == exp[moves])
+		return exp[moves];
+	// hand_sum % 2 == 0 && hand[hand_sum / 2] == 2
+
+	exp[0] = eval_bank();
+	if (hand_value > 18 || hand_sum > 17)
+		return exp[3] = exp[2] = exp[1] = exp[0];
+
+	cards_left--;
+	double hit, dbl;
+	for (int i = 1; i < 11; ++i) {
+		mv(deck, hand, i);
+		hit += (deck[i] + 1) * eval_hand(1);
+		dbl += (deck[i] + 1) * 2 * eval_hand(0);
+		mv(hand, deck, i);
+	}
+	cards_left++;
+
+	exp[1] = max(exp[0], hit / cards_left);
+	exp[2] = max(exp[1], dbl / cards_left);
+	exp[3] = max(exp[2], -.5);
+	return exp[moves];
 }
 
 int main(void) {
-	srand48(time(NULL));
-	int sum;
-	for (sum = 20; sum > 1; --sum)
-		for (hand_fst = sum / 2; hand_fst && hand_fst > sum - 11; --hand_fst)
-			for (bank_fst = 1; bank_fst < 11; ++bank_fst)
-				hand_snd = sum - hand_fst, play();
+	mv(deck, hand, 10);
+	mv(deck, hand, 8);
+	mv(deck, bank, 1);
+	cards_left = 309;
+	printf("%f\n", eval_hand(3));
 	return 0;
 }
