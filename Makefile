@@ -5,7 +5,7 @@ run: bjs
 	./$<
 
 bjs: bjs.c
-	$(CC) -Wall $< -o $@
+	$(CC) -Wall -Wextra $< -o $@
 
 .PHONY: prof
 prof: gmon.out

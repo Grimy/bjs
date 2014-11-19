@@ -1,104 +1,141 @@
-#include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
-#define mv(a, b, i) --(a)[i]; ++(b)[i]
+#define NDECKS 6
+#define DOUBLE_AFTER_SPLIT 1
+
+#define FOREACH(dest, code) \
+	cards_left--; \
+	for (int i = 1; i < 11; --dest[i], ++deck[i], ++i) { \
+		--deck[i]; ++dest[i]; code; \
+	} cards_left++;
+
 #define max(a, b) ((a) > (b) ? (a) : (b))
+#define CACHE_SIZE 9219
 
 // < 0% : 5vA 6vA 14v10 12v4
 // < .5% : 16v9 11v10 A7v2 7vA A2v5
 // < 2% : 13v2 12v3 12v6 12vA 9v2 8v6 A6v2 A5v3 A3v4
 
-static int deck[11] = { [1 ... 9] = 24, [10] = 96 };
-static int hand[11] = {0};
-static int bank[11] = {0};
+enum { HASH = 0, ACE = 1, SUM = 11, VALUE = 12 };
+static int deck[11] = {[1 ... 9] = 4 * NDECKS, [10] = 4 * 4 * NDECKS};
+static int hand[13] = {0};
+static int bank[13] = {0};
 
-static int hand_hash, hand_sum, hand_value, cards_left;
-/* static double cache[33023][5] = {[0 ... 33022] = {[0 ... 4] = .0d / .0d}}; */
+static int cards_left = 52 * NDECKS;
+static int bank_first;
+static double cache[10][CACHE_SIZE][5] = {{{0}}};
+static double bank_cache[CACHE_SIZE] = {0};
 
-void update_hand() {
+void update_hand(int hand[13]) {
 	int pos = 1 + hand[1] / 2;
 	int card = 2;
-	hand_hash = (hand[1] & 1) ^ ~(~0 << pos);
-	hand_sum = hand[1];
+	hand[HASH] = (hand[1] & 1) ^ ~(~0 << pos);
+	hand[SUM] = hand[1];
 
 	for (int i = 2; i < 11; i++) {
-		hand_sum += i * hand[i];
-		for (int j = 1; j < hand[i]; j++) {
-			hand_hash |= 1 << (pos += i + 1 - card);
+		hand[SUM] += i * hand[i];
+		for (int j = 0; j < hand[i]; j++) {
+			hand[HASH] |= 1 << (pos += i + 1 - card);
 			card = i;
 		}
 	}
-	hand_value = hand_sum + 10 * (hand[1] && hand_sum <= 11);
+	hand[HASH] %= CACHE_SIZE;
+	hand[VALUE] = hand[SUM] + 10 * (hand[1] && hand[SUM] <= 11);
 }
 
 double eval_bank() {
-	int sum = 0;
-	for (int i = 1; i < 11; ++i)
-		sum += i * bank[i];
-	int val = sum + 10 * (bank[1] && sum <= 11);
-	int blackjack = bank[1] && bank[10] && sum == 11;
-
-	if (val > 21)
+	update_hand(bank);
+	if (bank[VALUE] > 21)
 		return 1;
-	if (val >= 17)
-		return (hand_value > val) - (hand_value < val + blackjack);
+	if (bank_cache[bank[HASH]])
+		return bank_cache[bank[HASH]];
+	int blackjack = bank[ACE] && bank[10] && bank[SUM] == 11;
+	if (bank[VALUE] >= 17)
+		return (hand[VALUE] > bank[VALUE]) - (hand[VALUE] < bank[VALUE] + blackjack);
 
-	double result, omg = 42E10;
-	cards_left--;
-	for (int i = 1; i < 11; ++i) {
-		mv(deck, bank, i);
-		printf("", omg);
-		result += (deck[i] + 1) * eval_bank();
-		mv(bank, deck, i);
-	}
-	cards_left++;
-
-	return result / cards_left;
+	double result = 0;
+	FOREACH(bank, result += (deck[i] + 1) * eval_bank());
+	return bank_cache[bank[HASH]] = result / cards_left;
 }
 
 double eval_hand(int moves) {
-	update_hand();
-	if (hand_value > 21)
+	update_hand(hand);
+	if (hand[VALUE] > 21)
 		return -1;
-	if (hand_value == 21 && hand_sum == 11) // Blackjack!
-		return 1.5 * (cards_left - hand[bank[11] ? 10 : bank[10]]) / cards_left;
+	if (hand[ACE] && hand[10] && hand[SUM] == 11) // Blackjack!
+		return 1.5 * (cards_left - deck[bank[1] ? 10 : bank[10]]) / cards_left;
 
-	/* double *exp = cache[hand_hash]; */
-	double exp[5] = {[0 ... 4] = .0d / .0d};
-	if (hand_hash > 33022) {
-		printf("Hash too big: %d\n", hand_hash);
-		exit(1);
-	}
-	if (exp[moves] == exp[moves])
+	double *exp = cache[bank_first - 1][hand[HASH]];
+	if (exp[moves])
 		return exp[moves];
-	// hand_sum % 2 == 0 && hand[hand_sum / 2] == 2
 
+	memset(bank_cache, 0, sizeof(bank_cache));
 	exp[0] = eval_bank();
-	if (hand_value > 18 || hand_sum > 17)
-		return exp[3] = exp[2] = exp[1] = exp[0];
+	if (hand[VALUE] > 18 || hand[SUM] > 17)
+		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0];
 
-	cards_left--;
-	double hit, dbl;
-	for (int i = 1; i < 11; ++i) {
-		mv(deck, hand, i);
+	int can_split = hand[SUM] % 2 == 0 && hand[hand[SUM] / 2] == 2 ? hand[SUM] / 2 : 0;
+	int was_split = hand[SUM] < 11 && hand[hand[SUM]] ? hand[SUM] : 0;
+
+	double hit = 0, dbl = 0, split = -2;
+	FOREACH(hand,
+		if (i == was_split)
+			continue;
 		hit += (deck[i] + 1) * eval_hand(1);
 		dbl += (deck[i] + 1) * 2 * eval_hand(0);
-		mv(hand, deck, i);
+	)
+	if (can_split) {
+		--hand[can_split];
+		split = eval_hand(2);
+		++hand[can_split];
 	}
-	cards_left++;
 
-	exp[1] = max(exp[0], hit / cards_left);
-	exp[2] = max(exp[1], dbl / cards_left);
+	exp[1] = max(exp[0], hit / (cards_left - 2 * deck[was_split]));
+	exp[2] = max(exp[1], dbl / (cards_left - 2 * deck[was_split]));
 	exp[3] = max(exp[2], -.5);
+	exp[4] = max(exp[3], split);
+
 	return exp[moves];
 }
 
+void print_strat(int hand_first, int hand_snd) {
+	char repr[] = "SHDRP";
+	++hand[hand_first];
+	++hand[hand_snd];
+	printf("\n%2d %2d", hand_first, hand_snd);
+
+	update_hand(hand);
+	for (int bank_first = 2; bank_first < 12; ++bank_first) {
+		double *exp = cache[bank_first == 11 ? 0 : bank_first - 1][hand[HASH]];
+		int max = 0;
+		for (int i = 1; i < 5; i++)
+			if (exp[i] > exp[max])
+				max = i;
+		printf(" %c", repr[max]);
+	}
+
+	--hand[hand_first];
+	--hand[hand_snd];
+}
+
 int main(void) {
-	mv(deck, hand, 10);
-	mv(deck, hand, 8);
-	mv(deck, bank, 1);
-	cards_left = 309;
-	printf("%f\n", eval_hand(3));
+	int fst;
+	FOREACH(bank,
+		bank_first = i;
+		FOREACH(hand, eval_hand(4));
+		FOREACH(hand, fst = i; FOREACH(hand,
+			printf("%d %d %d %f\n", bank_first, fst, i, eval_hand(4));
+		))
+	)
+
+	/* for (int sum = 5; sum < 20; ++sum) */
+		/* print_strat((sum - 1) / 2, sum / 2 + 1); */
+	/* for (int i = 2; i < 11; ++i) */
+		/* print_strat(1, i); */
+	/* for (int i = 1; i < 11; ++i) */
+		/* print_strat(i, i); */
+
 	return 0;
 }
