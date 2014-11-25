@@ -1,26 +1,29 @@
-CC = gcc --std=c99
+CC = gcc -Wall -Wextra --std=gnu99 -march=native -Ofast
 
 .PHONY: run
 run: bjs
-	./$<
+	./$@
 
-bjs: bjs.c
-	$(CC) -Wall -Wextra $< -o $@
+bjs: bjs.c Makefile
+	$(CC) -fprofile-generate $< -o $@
+	./$@
+	$(CC) -fprofile-use $< -o $@
 
-.PHONY: prof
-prof: gmon.out
-	gprof --brief
+bjs.s: bjs.c Makefile
+	$(CC) -fprofile-use -S $<
 
-gmon.out: a.out
-	./$<
+.PHONY: stat
+stat: bjs
+	perf stat -d -etask-clock -epage-faults -ecycles -einstructions -erc8 -erc9 -ealignment-faults -er47 ./$<
 
-a.out: bjs.c
-	$(CC) -pg -Wall $<
+.PHONY: report
+report: bjs
+	perf record -e LLC-load-misses ./$<
+	perf report
 
 .PHONY: debug
-debug: bjs-debug
-	gdb bjs-debug
+debug: a.out
+	gdb ./$<
 
-bjs-debug: bjs.c
-	$(CC) -g -Wall $< -o $@
-
+a.out: bjs.c Makefile
+	$(CC) -Og -ggdb $<

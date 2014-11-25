@@ -1,5 +1,5 @@
 a.out
 bjs
-bjs-debug
-gmon.out
+bjs.s
+perf.data
 *.tmp
