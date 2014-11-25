@@ -79,7 +79,7 @@ static double eval_hand(long moves) {
 		dbl += (deck[i] + 1) * 2 * eval_hand(0);
 		/* } */
 	)
-	printf("%*s%ld\n", 312 - (int) cards_left, "", hand);
+	/* printf("%*s%ld\n", 312 - (int) cards_left, "", hand); */
 
 	/* if (can_split) { */
 		/* --hand[can_split]; */
@@ -116,17 +116,32 @@ static void print_strat(long hand_first, long hand_snd) {
 	}
 }
 
-static long count = 1;
-long fill_tree(long card, long sum) {
+void fill_tree(long prev_hash, long new_card, long sum) {
+	static long count = 1;
+	static long hand[11] = {0};
+	
 	if (sum > 21)
-		return 0;
+		return;
 	long hash = count++;
+	cache[prev_hash][new_card] = hash;
 	cache[hash][SUM] = sum;
-	cache[hash][VALUE] = sum + 10 * (hash < 2441 && sum <= 11); // soft hand
-	for (; card < 11; card++) {
-		cache[hash][card] = fill_tree(card, sum + card);
+	cache[hash][VALUE] = sum + 10 * (hand[1] && sum <= 11); // soft hand
+
+	for (long i = new_card; i < 11; ++i) {
+		++hand[i];
+		fill_tree(hash, i, sum + i);
+		--hand[i];
 	}
-	return hash;
+
+	for (long i = 1; i < new_card && sum + i <= 21; ++i) {
+		++hand[i];
+		long h = 1;
+		for (long j = 1; j < 11; ++j)
+			for (long k = 0; k < hand[j]; ++k)
+				h = cache[h][j];
+		cache[hash][i] = h;
+		--hand[i];
+	}
 }
 
 int main(void) {
@@ -138,7 +153,7 @@ int main(void) {
 	/* --deck[bank_first], ++bank[bank_first], --cards_left; */
 	/* eval_hand(4); */
 	/* return 0; */
-	fill_tree(1, 0);
+	fill_tree(0, 1, 0);
 
 	FOREACH(bank,
 		bank_first = i;
@@ -148,8 +163,8 @@ int main(void) {
 		print_strat((sum - 1) / 2, sum / 2 + 1);
 	for (long i = 2; i < 11; ++i)
 		print_strat(1, i);
-	for (long i = 1; i < 11; ++i)
-		print_strat(i, i);
+	/* for (long i = 1; i < 11; ++i) */
+		/* print_strat(i, i); */
 
 	return 0;
 }

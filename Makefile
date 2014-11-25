@@ -2,7 +2,7 @@ CC = gcc -Wall -Wextra --std=gnu99 -march=native -Ofast
 
 .PHONY: run
 run: bjs
-	./$@
+	./$<
 
 bjs: bjs.c Makefile
 	$(CC) -fprofile-generate $< -o $@
