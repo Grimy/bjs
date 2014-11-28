@@ -1,7 +1,9 @@
 a.out
-bjs.gcda
 bjs
-bjs.s
 perf.data
 perf.data.old
+*.gcda
+*.svg
+*.s
+*.o
 *.tmp
