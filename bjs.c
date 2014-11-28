@@ -1,6 +1,4 @@
 #include <assert.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -9,12 +7,11 @@
 #define BLACKJACK_PAYS 1.5
 
 #define CACHE_SIZE (3084)
-#define FOREACH(dest, code) do { \
-	cards_left--; \
-	long save = dest; \
-	for (long __i = 1; __i < 11; ++deck[__i], ++__i) { \
-		long proba = deck[__i]--; dest = cache[save][__i]; code; \
-	(void) proba; } dest = save; cards_left++; } while(0)
+#define weighted_avg(dest, code) ({ \
+	cards_left--; long save = dest; double result = 0; \
+	for (long i = 1; i < 11; ++deck[i], ++i) { \
+		dest = cache[save][i]; result += deck[i]-- * (code); \
+	} dest = save; result / ++cards_left; })
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define cmp(a, b) (((a) > (b)) - ((a) < (b)))
@@ -33,16 +30,12 @@ static long bank_first = 0;
 
 static double eval_bank() {
 	double *exp = &bank_cache[bank];
-	/* asm("addq %1, %0" */
-			/* : "=r"(x) */
-			/* : "r"(y), "0"(x)); */
-
 	if (*exp)
 		return *exp;
 	if (cache[bank][VALUE] >= 17)
 		return *exp = cmp(cache[hand][VALUE], cache[bank][VALUE]);
-	FOREACH(bank, *exp += proba * eval_bank());
-	return *exp /= cards_left;
+	*exp = weighted_avg(bank, eval_bank());
+	return *exp;
 }
 
 static double eval_hand(long moves) {
@@ -62,16 +55,11 @@ static double eval_hand(long moves) {
 	if (cache[hand][VALUE] > 18)
 		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0];
 
-	double hit = 0, dbl = 0, split = -2;
 	long was_split = cache[hand][WAS_SPLIT];
-	FOREACH(hand,
-		if (!cache[hand][CAN_SPLIT]) {
-			hit += proba * eval_hand(1 + (was_split && DOUBLE_AFTER_SPLIT));
-			dbl += proba * 2 * eval_hand(0);
-		}
-	);
-	/* printf("%*s%ld\n", 312 - (int) cards_left, "", hand); */
-
+	long das = 1 + (was_split && DOUBLE_AFTER_SPLIT);
+	double hit = weighted_avg(hand, cache[hand][CAN_SPLIT] ? 0 : eval_hand(das));
+	double dbl = weighted_avg(hand, cache[hand][CAN_SPLIT] ? 0 : 2 * eval_hand(0));
+	double split = -2;
 	if (cache[hand][CAN_SPLIT]) {
 		long save = hand;
 		hand = cache[1][cache[hand][CAN_SPLIT]];
@@ -79,7 +67,7 @@ static double eval_hand(long moves) {
 		hand = save;
 	}
 
-	double ratio = was_split ? (cards_left - 2 * deck[was_split]) : cards_left;
+	double ratio = was_split ? (cards_left - 2 * deck[was_split]) / (double) cards_left : 1;
 	exp[1] = max(exp[0], hit / ratio);
 	exp[2] = max(exp[1], dbl / ratio);
 	exp[3] = max(exp[2], -.5);
@@ -136,10 +124,11 @@ int main(void) {
 	fill_cache(0, 0, 1);
 	bank_cache[0] = 1;
 
-	FOREACH(bank,
-		++bank_first;
-		FOREACH(hand, FOREACH(hand, eval_hand(4)););
+	double expected_gain = weighted_avg(bank,
+		!++bank_first?0:
+		weighted_avg(hand, weighted_avg(hand, eval_hand(4)))
 	);
+	printf("Expected gain: %f%%\n", expected_gain * 100);
 	for (long sum = 5; sum < 20; ++sum)
 		print_strat((sum - 1) / 2, sum / 2 + 1);
 	for (long i = 2; i < 11; ++i)
