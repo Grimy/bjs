@@ -1,13 +1,15 @@
-CC = gcc -Wall -Wextra -std=gnu99 -march=native -Ofast -ggdb
+CCFLAGS = -Wall -Wextra -Werror -std=gnu99 -march=native
+OPTI = -fno-asynchronous-unwind-tables -Ofast
+DEBUG =  -Og -ggdb -fsanitize=address,leak,undefined
 
 .PHONY: run
 run: bjs
 	./$<
 
 bjs: bjs.c Makefile
-	$(CC) -fprofile-generate $< -o $@
+	$(CC) $(CCFLAGS) $(OPTI) -fprofile-generate $< -o $@
 	./$@
-	$(CC) -fprofile-use $< -o $@
+	$(CC) $(CCFLAGS) $(OPTI) -fprofile-use $< -o $@
 
 .PHONY: stat
 stat: bjs
@@ -15,7 +17,7 @@ stat: bjs
 
 .PHONY: report
 report: bjs
-	perf record ./$<
+	perf record -e LLC-load-misses ./$<
 	perf report
 
 .PHONY: debug
@@ -23,6 +25,8 @@ debug: a.out
 	gdb ./$<
 
 a.out: bjs.c Makefile
-	$(CC) -Og $<
+	$(CC) $(CCFLAGS) $(DEBUG) $<
 
+bjs.s: bjs.c Makefile
+	$(CC) $(CCFLAGS) $(OPTI) -S $<
 # yasm -pgas -felf64 fibo.asm

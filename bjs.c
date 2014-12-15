@@ -10,11 +10,17 @@
 #define weighted_avg(dest, code) ({ \
 	cards_left--; long save = dest; double result = 0; \
 	for (long i = 1; i < 11; ++deck[i], ++i) { \
-		dest = cache[save][i]; result += deck[i]-- * (code); \
+		dest = cache[save][i]; result += deck[i]-- * ({code;}); \
 	} dest = save; result / ++cards_left; })
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
-#define cmp(a, b) (((a) > (b)) - ((a) < (b)))
+
+static inline double cmp(long a, long b) {
+	double result;
+	asm volatile("cmpq %2, %1; seta %b1; sbb $0, %k1; cvtsi2sd %k1, %0"
+			: "=x"(result), "+r"(a) : "r"(b));
+	return result;
+}
 
 enum { SUM = 0, VALUE = 11, CAN_SPLIT = 12, WAS_SPLIT = 13 };
 static long cache[CACHE_SIZE][14];
@@ -29,13 +35,11 @@ static long cards_left = 52 * NDECKS;
 static long bank_first = 0;
 
 static double eval_bank() {
-	double *exp = &bank_cache[bank];
-	if (*exp)
-		return *exp;
-	if (cache[bank][VALUE] >= 17)
-		return *exp = cmp(cache[hand][VALUE], cache[bank][VALUE]);
-	*exp = weighted_avg(bank, eval_bank());
-	return *exp;
+	if (!bank_cache[bank])
+		bank_cache[bank] = cache[bank][VALUE] >= 17
+			? cmp(cache[hand][VALUE], cache[bank][VALUE])
+			: weighted_avg(bank, eval_bank());
+	return bank_cache[bank];
 }
 
 static double eval_hand(long moves) {
@@ -92,7 +96,7 @@ static void print_strat(long hand_first, long hand_snd) {
 	}
 }
 
-void fill_cache(long prev_hash, long new_card, long ordered) {
+static void fill_cache(long prev_hash, long new_card, long ordered) {
 	static long count = 0;
 	static long hand[11] = {0};
 	
@@ -125,7 +129,7 @@ int main(void) {
 	bank_cache[0] = 1;
 
 	double expected_gain = weighted_avg(bank,
-		!++bank_first?0:
+		bank_first = i;
 		weighted_avg(hand, weighted_avg(hand, eval_hand(4)))
 	);
 	printf("Expected gain: %f%%\n", expected_gain * 100);
