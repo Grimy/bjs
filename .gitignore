@@ -1,9 +1,11 @@
-a.out
 bjs
-perf.data
-perf.data.old
+bjs-debug
+
+a.out
+perf.data*
+*.bak
 *.gcda
-*.svg
-*.s
 *.o
+*.s
+*.svg
 *.tmp
