@@ -3,6 +3,7 @@ bjs-debug
 
 a.out
 perf.data*
+default.profraw
 *.bak
 *.gcda
 *.o
