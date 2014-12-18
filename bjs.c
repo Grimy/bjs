@@ -8,7 +8,7 @@
 
 #define CACHE_SIZE (3084)
 
-#define weighted_avg(dest, code) ({ \
+#define weighted_avg(dest, code) __extension__ ({ \
 	cards_left--; long save = dest; double result = 0; \
 	for (long i = 1; i < 11; ++deck[i], ++i) { \
 		dest = cache[save][i]; result += (double) deck[i]-- * ({code;}); \
@@ -30,7 +30,7 @@ static double bank_cache[CACHE_SIZE] = {0};
 static long hand = 1;
 static long bank = 1;
 
-static long deck[11] = {[1 ... 9] = 4 * NDECKS, [10] = 4 * 4 * NDECKS};
+__extension__ static long deck[11] = { [1 ... 9] = 4 * NDECKS, 4 * 4 * NDECKS};
 
 static int cards_left = 52 * NDECKS;
 static long bank_first = 0;
