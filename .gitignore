@@ -1,7 +1,6 @@
 bjs
-bjs-debug
+bjs-*
 
-a.out
 perf.data*
 default.profraw
 *.bak

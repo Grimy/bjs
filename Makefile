@@ -3,8 +3,9 @@ CFLAGS += -Wno-shadow -Wno-float-equal
 
 # End of project-specific configuration; what follows is generic copy-pasta
 
-MAKEFLAGS += --no-builtin-rules --no-builtin-vars --quiet
+MAKEFLAGS += --no-builtin-rules --quiet
 CFLAGS += -std=c99 -pedantic -march=native -fstrict-aliasing -fstrict-overflow
+PERF_EVENTS = task-clock page-faults cycles instructions branch branch-misses
 
 OPTI = -Ofast -fno-asynchronous-unwind-tables
 DEBUG = -O1 -ggdb
@@ -30,34 +31,28 @@ else
 	WALL += switch-enum unreachable-code unsafe-loop-optimizations unused
 	WALL += unused-macros vector-operation-performance write-strings
 endif
-override CFLAGS := $(foreach W, $(WALL), -W$W) $(CFLAGS)
+override CFLAGS := $(foreach W, $(WALL), -W$W) $(OPTI) $(CFLAGS)
 
-PERF_EVENTS = task-clock page-faults cycles instructions branch branch-misses
+$(NAME)-profgen: CFLAGS += $(PROF)-generate
+$(NAME)-debug: CFLAGS += $(DEBUG)
+$(NAME).s: CFLAGS += -S
 
-$(NAME): $(NAME).c Makefile
+$(NAME) $(NAME)-profgen $(NAME)-debug $(NAME).s: $(NAME).c Makefile
 	echo CC $<
-	$(CC) $(CFLAGS) $(OPTI) $< -o $@
-
-$(NAME)-debug: $(NAME).c Makefile
-	echo CC $<
-	$(CC) $(CFLAGS) $(DEBUG) $< -o $@
-
-$(NAME).s: $(NAME).c Makefile
-	echo CC $<
-	$(CC) $(CFLAGS) $(OPTI) -S $<
+	$(CC) $(CFLAGS) $< -o $@
 
 .PHONY: run
 run: $(NAME)
 	./$< $(ARGS)
 
-.PHONY: pgo
-pgo: $(NAME).c Makefile
-	echo CC -fprofile-generate $<
-	$(CC) $(CFLAGS) $(OPTI) $(PROF)-generate $<
-	./a.out $(ARGS)
-	llvm-profdata merge default.profraw -o $(NAME).gcda || true
-	echo CC -fprofile-use $<
-	$(CC) $(CFLAGS) $(OPTI) $(PROF)-use=$(NAME).gcda $< -o $(NAME)
+.PHONY: pgo profuse
+pgo: $(NAME).gcda profuse
+profuse: CFLAGS += $(PROF)-use
+profuse: $(NAME)
+
+$(NAME).gcda: $(NAME)-profgen
+	./$< $(ARGS)
+	llvm-profdata merge default.profraw -o $@ || true
 
 .PHONY: debug
 debug: $(NAME)-debug
