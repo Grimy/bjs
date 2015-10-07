@@ -28,7 +28,7 @@ static inline double cmp(long a, long b) {
 
 enum { VALUE = 0, CAN_SPLIT = 11, WAS_SPLIT = 12 };
 static long cache[CACHE_SIZE][13];
-static double hand_cache[10][CACHE_SIZE][5];
+static double hand_cache[12][CACHE_SIZE + 1000][7];
 static double bank_cache[CACHE_SIZE] = {1};
 static long hand = 1;
 static long bank = 1;
@@ -54,19 +54,22 @@ static double eval_hand(long moves) {
 	if (!hand)
 		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0] = -1;
 
-	if (cache[hand][VALUE] == 22)
-		return BLACKJACK_PAYS * (double) (cards_left -
-			deck[(bank_first == 1) ? 10 : bank_first == 10]) / cards_left;
-
 	memset(bank_cache + 1, 255, sizeof(bank_cache) - sizeof(*bank_cache));
 
-	exp[0] = eval_bank();
-	if (cache[hand][VALUE] > 18)
-		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0];
+	exp[0] = eval_bank() * (cache[hand][VALUE] == 22 ? BLACKJACK_PAYS : 1);
 
-	long was_split = cache[hand][WAS_SPLIT];
-	long das = 1 + (was_split && DOUBLE_AFTER_SPLIT);
-	double hit = weighted_avg(hand, cache[hand][CAN_SPLIT] ? .0 : eval_hand(das));
+	if (cache[hand][VALUE] == 22) {
+		printf("Old: %f, %ld, %ld\n", BLACKJACK_PAYS * (double) (cards_left - deck[(bank_first == 1) ? 10 : bank_first == 10]) / cards_left, hand, bank);
+		return BLACKJACK_PAYS * (double) (cards_left - deck[(bank_first == 1) ? 10 : bank_first == 10]) / cards_left;
+	}
+
+	if (cache[hand][VALUE] == 22) {
+		printf("New: %f\n", exp[0]);
+		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0];
+	}
+
+	long das = cache[hand][WAS_SPLIT] && DOUBLE_AFTER_SPLIT;
+	double hit = weighted_avg(hand, cache[hand][CAN_SPLIT] ? .0 : eval_hand(1 + das));
 	double dbl = weighted_avg(hand, cache[hand][CAN_SPLIT] ? .0 : 2 * eval_hand(0));
 	double split = -2;
 	if (cache[hand][CAN_SPLIT]) {
@@ -76,7 +79,7 @@ static double eval_hand(long moves) {
 		hand = save;
 	}
 
-	double ratio = was_split ? (cards_left - 2 * (double) deck[was_split]) / cards_left : 1.0;
+	double ratio = (cards_left - 2.0 * deck[cache[hand][WAS_SPLIT]]) / cards_left;
 	exp[1] = max(exp[0], hit / ratio);
 	exp[2] = max(exp[1], dbl / ratio);
 	exp[3] = max(exp[2], -.5);
@@ -106,19 +109,19 @@ static void fill_cache(long prev_hash, long sum, long new_card) {
 	static long hand[11] = {0};
 	
 	long hash = ++count;
+	long i = 1;
+
 	cache[prev_hash][new_card] = hash;
 	cache[hash][VALUE] = sum + 10 * (hand[1] && sum <= 11); // soft hand
 	cache[hash][VALUE] += hand[1] && hand[10] && sum == 11; // blackjack
 	cache[hash][CAN_SPLIT] = sum % 2 == 0 && hand[sum / 2] == 2 ? sum / 2 : 0;
 	cache[hash][WAS_SPLIT] = sum < 11 && hand[sum] ? sum : 0;
 
-	long i = 1;
 	for (; i < new_card && sum + i <= 21; ++i) {
-		long new_hash = 1;
+		cache[hash][i] = 1;
 		for (long j = 1; j < 11; ++j)
 			for (long k = 0; k < hand[j] + (j == i); ++k)
-				new_hash = cache[new_hash][j];
-		cache[hash][i] = new_hash;
+				cache[hash][i] = cache[cache[hash][i]][j];
 	}
 
 	for (; i < 11 && sum + i <= 21; ++i) {
