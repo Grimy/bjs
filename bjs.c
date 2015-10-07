@@ -33,7 +33,7 @@ static double bank_cache[CACHE_SIZE] = {1};
 static long hand = 1;
 static long bank = 1;
 
-__extension__ static long deck[11] = {[1 ... 9] = 4 * NDECKS, 4 * 4 * NDECKS};
+__extension__ static long deck[11] = { [1 ... 9] = 4 * NDECKS, 4 * 4 * NDECKS};
 
 static int cards_left = 52 * NDECKS;
 static long bank_first = 0;

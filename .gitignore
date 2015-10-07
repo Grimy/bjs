@@ -1,0 +1,11 @@
+bjs
+bjs-*
+
+perf.data*
+default.profraw
+*.bak
+*.gcda
+*.o
+*.s
+*.svg
+*.tmp
