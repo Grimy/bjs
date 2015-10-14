@@ -30,7 +30,7 @@ static inline double cmp(long a, long b) {
 
 enum { VALUE = 0, CAN_SPLIT = 11 };
 static long cache[CACHE_SIZE][12];
-static double hand_cache[10][CACHE_SIZE][5];
+static double hand_cache[CACHE_SIZE][5];
 static double bank_cache[CACHE_SIZE] = {1};
 
 __extension__ static long deck[11] = {[1 ... 9] = 4 * NDECKS, 4 * 4 * NDECKS};
@@ -47,7 +47,7 @@ static double _eval_bank(long hand, long bank) {
 
 static double _eval_hand(long hand, long bank, long moves) {
 	// Look in the cache
-	double *exp = hand_cache[bank - 1][hand];
+	double *exp = hand_cache[hand];
 	if (exp[moves])
 		return exp[moves];
 
@@ -67,7 +67,7 @@ static double _eval_hand(long hand, long bank, long moves) {
 	long das = hand < 11 && DOUBLE_AFTER_SPLIT;
 	double hit = mean(hand, cache[hand][CAN_SPLIT] ? .0 : eval_hand(1 + das));
 	double dbl = mean(hand, cache[hand][CAN_SPLIT] ? .0 : 2 * eval_hand(0));
-	double split = 2 * hand_cache[bank - 1][cache[hand][CAN_SPLIT]][1];
+	double split = 2 * hand_cache[cache[hand][CAN_SPLIT]][1];
 
 	double ratio = (cards_left - (hand < 11 ? 2.0 * deck[hand] : 0.0)) / cards_left;
 	exp[1] = max(exp[0], hit / ratio);
@@ -75,22 +75,6 @@ static double _eval_hand(long hand, long bank, long moves) {
 	exp[3] = max(exp[2], -.5);
 	exp[4] = max(exp[3], split);
 	return exp[moves];
-}
-
-static void print_strat(long hand_first, long hand_snd) {
-	char repr[] = "SHDRP";
-	long hand = cache[0][hand_first];
-	hand = cache[hand][hand_snd];
-	printf("%2ld %2ld", hand_first, hand_snd);
-	for (long bank_first = 1; bank_first < 11; ++bank_first) {
-		double *exp = hand_cache[bank_first % 10][hand];
-		long max = 0;
-		for (long i = 1; i < 5; i++)
-			if (exp[i] > exp[max])
-				max = i;
-		printf(" %c", repr[max]);
-	}
-	printf("\n");
 }
 
 static void fill_cache(long hash, long sum, long new_card) {
@@ -116,19 +100,35 @@ static void fill_cache(long hash, long sum, long new_card) {
 	}
 }
 
+static void print_strat(long bank, long hand_first, long hand_snd) {
+	char repr[] = "SHDRP";
+	double *exp = hand_cache[cache[hand_first][hand_snd]];
+	long max = 0;
+	for (long i = 1; i < 5; i++)
+		if (exp[i] > exp[max])
+			max = i;
+	printf("\033[%ldG%c\n", bank == 1 ? 22 : bank * 2, repr[max]);
+}
+
+static double halfmain(long bank) {
+	long hand = 0;
+	memset(hand_cache, 0, sizeof(hand_cache));
+	mean(hand, eval_hand(1));
+	double result = mean(hand, mean(hand, eval_hand(4)));
+	for (long sum = 5; sum < 20; ++sum)
+		print_strat(bank, (sum - 1) / 2, sum / 2 + 1);
+	for (long i = 2; i < 11; ++i)
+		print_strat(bank, 1, i);
+	for (long i = 1; i < 11; ++i)
+		print_strat(bank, i, i);
+	printf("\033[34A");
+	return result;
+}
+
 int main(void) {
 	fill_cache(0, 0, 1);
-	long hand = 0, bank = 0;
-	mean(bank, mean(hand, eval_hand(1)));
-	double expected_gain = mean(bank, mean(hand, mean(hand, eval_hand(4))));
-
-	printf("Expected gain: %f%%\n", expected_gain * 100);
-	for (long sum = 5; sum < 20; ++sum)
-		print_strat((sum - 1) / 2, sum / 2 + 1);
-	for (long i = 2; i < 11; ++i)
-		print_strat(1, i);
-	for (long i = 1; i < 11; ++i)
-		print_strat(i, i);
-
+	long bank = 0;
+	double expected_gain = mean(bank, halfmain(bank));
+	printf("\033[34BExpected gain: %f%%\n", expected_gain * 100);
 	return 0;
 }
