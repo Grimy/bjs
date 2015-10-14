@@ -8,14 +8,16 @@
 
 #define CACHE_SIZE (3083)
 
-#define weighted_avg(dest, code) __extension__ ({ \
-	cards_left--; long save = dest; double result = 0; \
+#define mean(dest, code) __extension__ ({ \
+	cards_left--; double result = 0; long *p = cache[dest]; \
 	for (long i = 1; i < 11; ++deck[i], ++i) { \
-		dest = cache[save][i]; result += (double) deck[i]-- * ({code;}); \
-	} dest = save; result / ++cards_left; })
+		long dest = p[i]; result += (double) deck[i]-- * ({code;}); \
+	} result / ++cards_left; })
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define isnan(x) ((x) != (x)) // faster than the one from math.h
+#define eval_bank() _eval_bank(hand, bank)
+#define eval_hand(moves) _eval_hand(hand, bank, moves)
 
 /* Returns 1 if a > b, -1 if a < b, and 0 if a == b.
  * Same effect as (a > b) - (a < b), but about 2% faster. */
@@ -30,22 +32,20 @@ enum { VALUE = 0, CAN_SPLIT = 11 };
 static long cache[CACHE_SIZE][12];
 static double hand_cache[10][CACHE_SIZE][5];
 static double bank_cache[CACHE_SIZE] = {1};
-static long hand;
-static long bank;
 
 __extension__ static long deck[11] = {[1 ... 9] = 4 * NDECKS, 4 * 4 * NDECKS};
 
 static int cards_left = 52 * NDECKS;
 
-static double eval_bank(void) {
+static double _eval_bank(long hand, long bank) {
 	if (isnan(bank_cache[bank]))
 		bank_cache[bank] = cache[bank][VALUE] >= 17
 			? cmp(cache[hand][VALUE], cache[bank][VALUE])
-			: weighted_avg(bank, eval_bank());
+			: mean(bank, eval_bank());
 	return bank_cache[bank];
 }
 
-static double eval_hand(long moves) {
+static double _eval_hand(long hand, long bank, long moves) {
 	double *exp = hand_cache[bank - 1][hand];
 	if (exp[moves])
 		return exp[moves];
@@ -60,12 +60,11 @@ static double eval_hand(long moves) {
 		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0];
 
 	long das = hand < 11 && DOUBLE_AFTER_SPLIT;
-	double hit = weighted_avg(hand, cache[hand][CAN_SPLIT] ? .0 : eval_hand(1 + das));
-	double dbl = weighted_avg(hand, cache[hand][CAN_SPLIT] ? .0 : 2 * eval_hand(0));
-	double split = hand_cache[bank - 1][cache[hand][CAN_SPLIT]][1];
+	double hit = mean(hand, cache[hand][CAN_SPLIT] ? .0 : eval_hand(1 + das));
+	double dbl = mean(hand, cache[hand][CAN_SPLIT] ? .0 : 2 * eval_hand(0));
+	double split = 2 * hand_cache[bank - 1][cache[hand][CAN_SPLIT]][1];
 
 	double ratio = (cards_left - (hand < 11 ? 2.0 * deck[hand] : 0.0)) / cards_left;
-	printf("left: %ld\n", hand < 11 ? deck[hand] : 0);
 	exp[1] = max(exp[0], hit / ratio);
 	exp[2] = max(exp[1], dbl / ratio);
 	exp[3] = max(exp[2], -.5);
@@ -76,7 +75,7 @@ static double eval_hand(long moves) {
 
 static void print_strat(long hand_first, long hand_snd) {
 	char repr[] = "SHDRP";
-	hand = cache[0][hand_first];
+	long hand = cache[0][hand_first];
 	hand = cache[hand][hand_snd];
 	printf("%2ld %2ld", hand_first, hand_snd);
 	for (long bank_first = 1; bank_first < 11; ++bank_first) {
@@ -115,10 +114,10 @@ static void fill_cache(long hash, long sum, long new_card) {
 
 int main(void) {
 	fill_cache(0, 0, 1);
-	weighted_avg(bank, weighted_avg(hand, eval_hand(1)));
-	double expected_gain = weighted_avg(bank,
-		weighted_avg(hand, weighted_avg(hand, eval_hand(4)))
-	);
+	long hand = 0, bank = 0;
+	mean(bank, mean(hand, eval_hand(1)));
+	double expected_gain = mean(bank, mean(hand, mean(hand, eval_hand(4))));
+
 	printf("Expected gain: %f%%\n", expected_gain * 100);
 	for (long sum = 5; sum < 20; ++sum)
 		print_strat((sum - 1) / 2, sum / 2 + 1);
