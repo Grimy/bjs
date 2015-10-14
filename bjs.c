@@ -56,6 +56,9 @@ static double _eval_hand(long hand, long bank, long moves) {
 	memset(bank_cache + 1, 255, sizeof(bank_cache) - sizeof(*bank_cache));
 	exp[0] = eval_bank() * (cache[hand][VALUE] == 22 ? BLACKJACK_PAYS : 1);
 
+	if (!moves)
+		return exp[0];
+
 	if (cache[hand][VALUE] > 18)
 		return exp[4] = exp[3] = exp[2] = exp[1] = exp[0];
 
